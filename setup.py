@@ -7,12 +7,18 @@ with open(path.join(this_directory, 'README.md'), encoding='utf-8') as f:
 
 setup(
     name='reacthass',
-    version='0.1.2',
+    version='0.1.3',
     packages=['reacthass'],
     url='https://github.com/N4S4/reacthass',
     license='GPL-3.0 license',
-    description='Homeassistant API automation helper',
+    description='Lightweight Home Assistant API automation helper',
     long_description=long_description,
     long_description_content_type='text/markdown',
     author='Renato Visaggio',
+    python_requires='>=3.9',
+    install_requires=[
+        'HomeAssistant-API>=5.0.3,<6',
+        'requests_cache>=1.2,<2',
+        'aiohttp-client-cache>=0.11,<1',
+    ],
 )

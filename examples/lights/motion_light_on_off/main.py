@@ -17,9 +17,9 @@ def main():
         light_state = hass.get_entity_state(light)
         light_domain = hass.get_domain('light')
 
-        if check and light_state == 'off':  # checks if state is true
-            if hass.get_entity_state(person) == 'home':  # checks if the person is home
-                light_domain.turn_on(light)  # turn off every entity that is on
+        if check and light_state == 'off':
+            if hass.get_entity_state(person) == 'home':
+                light_domain.turn_on(light)
         elif not check and light_state == 'on':
             light_domain.turn_off(light)
 

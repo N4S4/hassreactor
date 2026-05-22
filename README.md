@@ -1,16 +1,6 @@
 # ReactHass
 
-## Introduction
-
-First of all I love Python, Home Assistant and Docker, but I also
-needed a way to communicate from different devices to Home Assistant 
-and do some twisted automations.
-
-You might need this repo for one of this reasons
-- Interface Home Assistant with other devices
-- There might be the case where you want to run an automation outside Home Assistant
-- In some of my cases, was easier to build an automation from Python
-- You love Python and Docker
+ReactHass is a tiny Home Assistant helper around `homeassistant_api`.
 
 ## Install
 
@@ -20,16 +10,16 @@ You might need this repo for one of this reasons
 ```python
 from reacthass import Reactor
 
-token = 'YOUR TOKEN'
-url = 'HOME ASSISTANT URL'
+hass = Reactor('HOME ASSISTANT URL', 'YOUR TOKEN')
 
-
-hass = Reactor(url, token)
-
-if hass.when_value_reached('sensor', 'temperature', 30):
-    hass.call_service('turn_on', 'fan.fan')
-    
+if hass.when_value_reached('sensor.temperature', 30, value_type='number'):
+    hass.get_domain('fan').turn_on(entity_id='fan.fan')
 ```
+
+## Notes
+- Home Assistant states are strings, so numeric checks use `value_type='number'`.
+- `get_entities_name('light')` returns full entity IDs like `light.kitchen`.
+- The async API mirrors the sync API.
 
 ## Persistence
 If you want to keep the sensor record in the database you might add to your configuration.yaml:
@@ -41,15 +31,8 @@ recorder:
       - sensor.test
 ```
 
-or if you have another suggestion to keep records of the state made by API let me know opening an issue.
-
 ## Examples
-
-Some examples are in the `/examples` folder, <br>
-
+See the `/examples` folder.
 
 ## Credits
-
-This package is built on top of the beautiful [HomeAssistantAPI](https://github.com/GrandMoff100/HomeAssistantAPI)
-
-
+This package is built on top of [HomeAssistantAPI](https://github.com/GrandMoff100/HomeAssistantAPI)

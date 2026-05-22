@@ -11,15 +11,15 @@ hass = Reactor(hassurl, token, verify_ssl=False)
 
 def main():
     while True:
-        climates = hass.get_entities_name('climate')  # get a list of all thermostat
-        room1 = hass.get_entity_state('sensor.temperature_1')  # temperature sensors state
-        room2 = hass.get_entity_state('sensor.temperature_2')
-        room3 = hass.get_entity_state('sensor.temperature_3')
+        climates = hass.get_entities_name('climate')
+        room1 = float(hass.get_entity_state('sensor.temperature_1'))
+        room2 = float(hass.get_entity_state('sensor.temperature_2'))
+        room3 = float(hass.get_entity_state('sensor.temperature_3'))
 
-        if room1 and room2 and room3 <= '18':  # check if all 3 rooms are below 18C
-            for climate in climates:  # loop through all climates names
-                entity = hass.get_domain('climate')  # get doamin to call service
-                return entity.turn_on(entity_id='climate.' + climate)  # for every climate call service
+        if room1 <= 18 and room2 <= 18 and room3 <= 18:
+            entity = hass.get_domain('climate')
+            for climate_entity_id in climates:
+                entity.turn_on(entity_id=climate_entity_id)
 
 
 if __name__ == '__main__':

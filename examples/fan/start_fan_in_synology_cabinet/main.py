@@ -23,12 +23,12 @@ fan_domain = hass.get_domain('fan')  # get the fan domain
 
 def main():
     while True:
-        syno_temp = syno.get_cpu_temp()  # get synology cpu temperature
-        if syno_temp >= '50':
-            fan_domain.call_service('turn_on', 'fan.cooling_fan')  # turn on fan in the cabinet
-        elif syno_temp <= '45':
-            fan_domain.call_service('turn_off', 'fan.cooling_fan')  # turn off fan in the cabinet
-        sleep(10)  # sleep to avoid making too many requests
+        syno_temp = float(syno.get_cpu_temp())
+        if syno_temp >= 50:
+            fan_domain.call_service('turn_on', 'fan.cooling_fan')
+        elif syno_temp <= 45:
+            fan_domain.call_service('turn_off', 'fan.cooling_fan')
+        sleep(10)
 
 
 if __name__ == '__main__':

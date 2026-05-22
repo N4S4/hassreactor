@@ -12,15 +12,12 @@ hass = Reactor(hassurl, token, verify_ssl=False)
 def main():
     while True:
         person = 'person.renato'
-        check = hass.if_state_equal_to_value(person, 'not_home')
-
-        if check:  # checks if state is true
-            lights_on = hass.check_specific_state_in_group('light', 'on')  # checks what lights are on and return a dict
-            for entity_name in lights_on:  # iterate through returned dict
-                domain = hass.get_domain('light')
-                domain.turn_off(entity_name)  # turn off every entity that is on
-                pass
-        sleep(60*5)  # check every 5 minutes
+        if hass.if_state_equal_to_value(person, 'not_home'):
+            lights_on = hass.check_specific_state_in_group('light', 'on')
+            domain = hass.get_domain('light')
+            for entity_id in lights_on:
+                domain.turn_off(entity_id)
+        sleep(60 * 5)
 
 
 if __name__ == '__main':

@@ -1,111 +1,100 @@
-from homeassistant_api import Client
-from aiohttp_client_cache import CachedSession, FileBackend
-
-import logging
+import asyncio
 from datetime import timedelta
+import logging
+from typing import Any, Optional
 
-logging.basicConfig(filename='log.log', encoding='utf-8', level=logging.ERROR)
+from aiohttp_client_cache import CachedSession, FileBackend
+from homeassistant_api import Client, State
+
+logger = logging.getLogger(__name__)
+logger.addHandler(logging.NullHandler())
 
 
 class AsyncReactor(Client):
-    def __init__(self, url, token, cache_refresh_seconds, verify_ssl=False):
-
+    def __init__(self, url, token, cache_refresh_seconds=30, verify_ssl=False):
         self._verify_ssl = verify_ssl
         self._token = token
-        self._url = url
+        self._url = url if url.endswith('/api') else f'{url}/api'
 
-        if not self._url.endswith('/api'):
-            self._url = url + '/api'
+        self._cache_refresh_seconds = CachedSession(
+            cache=FileBackend(expire_after=timedelta(seconds=cache_refresh_seconds))
+        )
 
-        self._cache_refresh_seconds = CachedSession(cache=FileBackend(expire_after=timedelta(seconds=cache_refresh_seconds)))
-        # expire_after= goes in FileBackend() and not outside as the documentation say
-
-        super().__init__(self._url, self._token, async_cache_session=self._cache_refresh_seconds,
-                         verify_ssl=self._verify_ssl, use_async=True)
-
-    async def _entity_group_set(self):
-        groups = await self.get_groups()
-        return groups
+        super().__init__(
+            self._url,
+            self._token,
+            async_cache_session=self._cache_refresh_seconds,
+            verify_ssl=self._verify_ssl,
+            use_async=True,
+        )
 
     async def get_groups(self):
-        groups = []
-        for group in await self.async_get_entities():
-            groups.append(group.group_id)
-        return groups
+        return list((await self.async_get_entities()).keys())
 
-    async def send_value_to_entity(self, entity: str, value: any, attributes: dict = None):
-        entity_data = await self.async_get_entity(entity_id=entity)
-        if attributes:
-            entity_data.state.state = value
-            entity_data.state.attributes.update(attributes)
-        else:
-            entity_data.state.state = value
-        await self.async_set_state(entity_data.state)
+    async def send_value_to_entity(self, entity: str, value: Any, attributes: Optional[dict] = None):
+        state = State(state=value, entity_id=entity, attributes=attributes or {})
+        await self.async_set_state(state)
 
     async def get_entities_name(self, group: str):
-        entity_name = []
         entities = await self.async_get_entities()
-        for entity in entities:
-            if entity.group_id == group:
-                entity_name.append(entity.entities)
-        return entity_name
+        entity_group = entities.get(group)
+        if entity_group is None:
+            return []
+        return list(entity_group.entities.keys())
 
     async def get_entity_state(self, entity_id):
         state = await self.async_get_state(entity_id=entity_id)
         return state.state
 
     async def get_services(self, domain: str):
-        service = await self.async_get_domain(domain)
-        return service
+        return await self.async_get_domain(domain)
 
-    async def check_specific_state_in_group(self, group: str,
-                                            state: any) -> dict:  # check what entity has specific state
+    async def check_specific_state_in_group(self, group: str, state: Any) -> dict:
         all_states = await self.async_get_states()
         group_states = {}
         for entity in all_states:
-            if str(entity.entity_id).startswith(group):
-                if entity.state == state:
-                    group_states[entity.entity_id] = entity.state
+            if str(entity.entity_id).startswith(f'{group}.') and entity.state == state:
+                group_states[entity.entity_id] = entity.state
         return group_states
 
-    async def if_state_equal_to_value(self, entity: str, threshold_value: any, value_type: str = 'string',
-                                      operator_type: str = '=='):  # operator_type accept <= >= == != < > operator
-
+    async def if_state_equal_to_value(self, entity: str, threshold_value: Any, value_type: str = 'string',
+                                      operator_type: str = '=='):
         state = await self.get_entity_state(entity)
-        if type(threshold_value) != type(state):
-            return f'Cannot compare threshold type {type(threshold_value)} with state {type(state)}'
 
         if value_type == 'string':
-            if state == threshold_value:
-                return True
-            else:
-                return False
-
+            state = str(state)
+            threshold_value = str(threshold_value)
         elif value_type == 'number':
-            if operator_type == '==':
-                if state == threshold_value:
-                    return True
-            elif operator_type == '>=':
-                if state >= threshold_value:
-                    return True
-            elif operator_type == '<=':
-                if state <= threshold_value:
-                    return True
-            elif operator_type == '<':
-                if state < threshold_value:
-                    return True
-            elif operator_type == '>':
-                if state > threshold_value:
-                    return True
-            elif operator_type == '!=':
-                if state != threshold_value:
-                    return True
+            try:
+                state = float(state)
+                threshold_value = float(threshold_value)
+            except (TypeError, ValueError):
+                return False
         else:
             return False
 
-    async def when_value_reached(self, client, entity: str, threshold_value: any, value_type: str = 'string',
-                                 operator_type: str = '=='):  # operator_type accept <= >= == != < > operator
-        async with client:
-            while True:
-                if await self.if_state_equal_to_value(entity, threshold_value, value_type, operator_type):
-                    return True
+        if operator_type == '==':
+            return state == threshold_value
+        if operator_type == '>=':
+            return state >= threshold_value
+        if operator_type == '<=':
+            return state <= threshold_value
+        if operator_type == '<':
+            return state < threshold_value
+        if operator_type == '>':
+            return state > threshold_value
+        if operator_type == '!=':
+            return state != threshold_value
+        return False
+
+    async def when_value_reached(self, client, entity: str, threshold_value: Any, value_type: str = 'string',
+                                 operator_type: str = '==', poll_interval: float = 1.0,
+                                 timeout: Optional[float] = None):
+        start = asyncio.get_event_loop().time()
+        watcher = client or self
+        while True:
+            if await watcher.if_state_equal_to_value(entity, threshold_value, value_type, operator_type):
+                return True
+            if timeout is not None and (asyncio.get_event_loop().time() - start) >= timeout:
+                return False
+            await asyncio.sleep(poll_interval)
