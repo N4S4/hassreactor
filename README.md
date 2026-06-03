@@ -120,6 +120,27 @@ hassreactor connects to Home Assistant via **WebSocket** and subscribes to event
 
 Service calls use the REST API. Only dependency: `aiohttp`.
 
+## Docker
+
+```bash
+cp .env.example .env                    # set your HA_TOKEN
+docker compose up -d                    # build and start
+```
+
+Your `automations.py` lives **on your PC** and is mounted as a volume — not inside the image:
+
+```yaml
+volumes:
+  - ./automations.py:/app/automations.py   # file on your host
+```
+
+Edit `automations.py`, save, and **the container never restarts**:
+hassreactor hot-reloads the module, detaches old triggers and
+re-registers new ones. The WebSocket connection to HA stays alive.
+
+If Home Assistant runs on the Docker host, use `network_mode: host` or
+the LAN IP (not `localhost`).
+
 ## License
 
 MIT
