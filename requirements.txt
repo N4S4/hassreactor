@@ -1,4 +1,1 @@
-homeassistant_api
-aiosqlite
-requests_cache
-aiohttp_client_cache
+aiohttp>=3.8
