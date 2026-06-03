@@ -1,0 +1,15 @@
+# hassreactor docker-compose.yml
+# Run: docker compose up -d
+
+services:
+  hassreactor:
+    build: .
+    container_name: hassreactor
+    restart: unless-stopped
+    environment:
+      - HA_URL=http://homeassistant:8123
+      - HA_TOKEN=${HA_TOKEN}
+    volumes:
+      - ./automations.py:/app/automations.py:ro
+    # Network — use host if HA is on the Docker host
+    # network_mode: host
