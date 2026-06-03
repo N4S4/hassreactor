@@ -412,6 +412,31 @@ def _ask_alarm_entities(
     return content
 
 
+def _extract_template_body(content: str) -> str:
+    """Extract only the automation functions from a template,
+    stripping the Reactor init and 'if __name__' block."""
+    # Find the blank line after "app = Reactor(...)"
+    marker = "app = Reactor("
+    idx = content.find(marker)
+    if idx == -1:
+        return content
+    # Skip to end of the Reactor line
+    newline = content.index("\n", idx)
+    # Skip trailing blank lines
+    start = newline + 1
+    while start < len(content) and content[start] == "\n":
+        start += 1
+    # Find 'if __name__' and remove it + app.run()
+    main_idx = content.rfind("if __name__")
+    if main_idx != -1:
+        # Back up to the blank line before if __name__
+        end = main_idx
+        while end > start and content[end - 1] == "\n":
+            end -= 1
+        return content[start:end].rstrip()
+    return content[start:].rstrip()
+
+
 def cmd_init(path: str, force: bool, template: str = "") -> int:
     """Create automations.py from template."""
     if not path.endswith(".py"):
@@ -442,7 +467,7 @@ def cmd_init(path: str, force: bool, template: str = "") -> int:
     return 0
 
 
-def cmd_wizard(ha_url: str, ha_token: str) -> int:
+def cmd_wizard(ha_url: str, ha_token: str, append: bool = False) -> int:
     """Interactive wizard: credentials → discover → pick entities → generate."""
     import asyncio
 
@@ -453,30 +478,53 @@ def cmd_wizard(ha_url: str, ha_token: str) -> int:
     url = ha_url or os.getenv("HA_URL", "")
     token = ha_token or os.getenv("HA_TOKEN", "")
 
-    if not url:
-        url = input(
-            "Home Assistant URL [http://homeassistant:8123]: "
-        ).strip()
-        if not url:
-            url = "http://homeassistant:8123"
-
-    if not token:
-        print(
-            "\nCreate a token in HA:"
-            " Settings → People → Long-Lived Access Tokens"
-        )
-        token = input("Home Assistant token: ").strip()
-        if not token:
-            print("\n❌ Token is required to connect to Home Assistant.")
+    if append:
+        # In append mode, skip credential prompts — read from .env or file
+        if url and token:
+            pass  # Already from env
+        else:
+            # Try reading from existing automations.py
+            try:
+                with open("automations.py", encoding="utf-8") as f:
+                    src = f.read()
+                import re as _re
+                m = _re.search(r'HA_URL\s*=\s*"([^"]*)"', src)
+                if m:
+                    url = m.group(1)
+                m = _re.search(r'HA_TOKEN\s*=\s*"([^"]*)"', src)
+                if m:
+                    token = m.group(1)
+            except FileNotFoundError:
+                pass
+        if not url or not token:
+            print("\n❌ Cannot find HA credentials for discovery.")
+            print("   Set HA_URL/HA_TOKEN env vars or run wizard without --append first.")
             return 1
+    else:
+        if not url:
+            url = input(
+                "Home Assistant URL [http://homeassistant:8123]: "
+            ).strip()
+            if not url:
+                url = "http://homeassistant:8123"
 
-    # Save to .env for future use
-    save = input("\nSave credentials to .env file? [Y/n]: ").strip().lower()
-    if save in ("", "y", "yes"):
-        with open(".env", "w", encoding="utf-8") as f:
-            f.write(f"HA_URL={url}\n")
-            f.write(f"HA_TOKEN={token}\n")
-        print("   ✅ Saved to .env")
+        if not token:
+            print(
+                "\nCreate a token in HA:"
+                " Settings → People → Long-Lived Access Tokens"
+            )
+            token = input("Home Assistant token: ").strip()
+            if not token:
+                print("\n❌ Token is required to connect to Home Assistant.")
+                return 1
+
+        # Save to .env for future use
+        save = input("\nSave credentials to .env file? [Y/n]: ").strip().lower()
+        if save in ("", "y", "yes"):
+            with open(".env", "w", encoding="utf-8") as f:
+                f.write(f"HA_URL={url}\n")
+                f.write(f"HA_TOKEN={token}\n")
+            print("   ✅ Saved to .env")
 
     # ── Phase 2: Discovery (optional) ────────────────────────────────────
     do_disc = input(
@@ -535,6 +583,36 @@ def cmd_wizard(ha_url: str, ha_token: str) -> int:
 
     # ── Phase 5: Generate ────────────────────────────────────────────────
     path = "automations.py"
+
+    if append:
+        if not os.path.exists(path):
+            print(f"\n❌ {path} not found. Run 'hassreactor wizard' first.")
+            return 1
+        # Extract only the functions from the template
+        body = _extract_template_body(content)
+        if not body.strip():
+            print("\n❌ Nothing to append.")
+            return 1
+        # Read existing file, find 'if __name__', insert before it
+        with open(path, encoding="utf-8") as f:
+            existing = f.read()
+        main_marker = "if __name__"
+        idx = existing.rfind(main_marker)
+        if idx == -1:
+            print(f"\n❌ {path} is missing 'if __name__' block.")
+            return 1
+        # Insert new functions before if __name__, with blank lines
+        new_content = (
+            existing[:idx].rstrip()
+            + "\n\n" + body + "\n\n\n"
+            + existing[idx:]
+        )
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(new_content)
+        print(f"\n✅ Appended to {path}")
+        print(f"   Run: python {path}")
+        return 0
+
     if os.path.exists(path):
         overwrite = input(
             f"\n{path} already exists. Overwrite? [y/N]: "
@@ -655,6 +733,10 @@ def main() -> None:
     wiz_p = sub.add_parser("wizard", help="Interactive builder")
     wiz_p.add_argument("--url", default="", help="HA URL")
     wiz_p.add_argument("--token", default="", help="HA token")
+    wiz_p.add_argument(
+        "--append", action="store_true",
+        help="Add automations to existing automations.py"
+    )
 
     # discover
     sub.add_parser("discover", help="Discover entities")
@@ -669,7 +751,7 @@ def main() -> None:
     if args.command == "init":
         sys.exit(cmd_init(args.path, args.force, args.template))
     elif args.command == "wizard":
-        sys.exit(cmd_wizard(args.url, args.token))
+        sys.exit(cmd_wizard(args.url, args.token, args.append))
     elif args.command == "discover":
         sys.exit(cmd_discover())
     else:

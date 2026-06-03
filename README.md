@@ -84,6 +84,16 @@ docker compose up -d
 
 Once running, edit `automations.py` anytime, save — hassreactor hot-reloads inside the container without restarting.
 
+### Adding more automations
+
+Already have `automations.py` and want to add another automation? Use the wizard in append mode:
+
+```bash
+hassreactor wizard --append
+```
+
+This skips the credential prompt (reads from your existing file), runs optional discovery, and inserts the new automation functions into your existing `automations.py` — nothing gets overwritten.
+
 ### Templates
 
 Skip the wizard and generate directly from a named template:
