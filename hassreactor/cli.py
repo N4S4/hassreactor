@@ -149,6 +149,99 @@ async def leak_cleared(event):
 if __name__ == "__main__":
     app.run()
 ''',
+
+    "report": '''"""
+Hourly report — log sensor data and send summary.
+Reads temperature and humidity every hour.
+"""
+from hassreactor import Reactor
+
+HA_URL = "http://homeassistant:8123"
+HA_TOKEN = "your-long-lived-token-here"
+
+app = Reactor(HA_URL, HA_TOKEN)
+
+
+@app.schedule("every 1h")
+async def hourly_report():
+    """Log temperature and humidity every hour."""
+    temp = await app.get_state("sensor.temperature_sensor")
+    humidity = await app.get_state("sensor.humidity_sensor")
+    app.log.info("Report: %s°C, %s%% humidity", temp, humidity)
+
+
+@app.schedule("0 9 * * *")
+async def morning_summary():
+    """Send a daily summary at 9am."""
+    app.log.info("Good morning! Daily report ready.")
+
+
+if __name__ == "__main__":
+    app.run()
+''',
+
+    "custom": '''"""
+Custom automation — fill in your own triggers and actions.
+All trigger types are shown as comments. Uncomment what you need.
+"""
+from hassreactor import Reactor
+
+HA_URL = "http://homeassistant:8123"
+HA_TOKEN = "your-long-lived-token-here"
+
+app = Reactor(HA_URL, HA_TOKEN)
+
+# ── State triggers ──────────────────────────────────────────────────────
+# @app.when("sensor.temperature", above=30)
+# async def too_hot(event):
+#     app.log.info("Too hot! %.1f°C", float(event.state))
+#     await app.fan.turn_on(entity_id="fan.living_room")
+
+# @app.when("sensor.temperature", below=20)
+# async def too_cold(event):
+#     await app.climate.set_temperature(entity_id="climate.home", temperature=22)
+
+# @app.when("binary_sensor.door", to="on")
+# async def door_opened(event):
+#     await app.notify.telegram(message="Door opened!")
+
+# @app.when("binary_sensor.door", to="on", for_="5m")
+# async def door_open_too_long(event):
+#     """State must persist for 5 minutes before firing."""
+#     await app.notify.telegram(message="Door open for 5 minutes!")
+
+# @app.when("sensor.humidity", changes=True, throttle="30s")
+# async def humidity_changed(event):
+#     """Fire at most once per 30 seconds."""
+#     app.log.info("Humidity: %s%%", event.state)
+
+# ── Sun triggers ────────────────────────────────────────────────────────
+# @app.sun(after="sunset")
+# async def lights_on():
+#     await app.light.turn_on(entity_id="light.garden")
+
+# @app.sun(before="sunrise", offset="30m")
+# async def lights_off():
+#     await app.light.turn_off(entity_id="light.garden")
+
+# ── Event triggers ──────────────────────────────────────────────────────
+# @app.on("call_service")
+# async def on_service(event):
+#     app.log.info("Service: %s", event.event_type)
+
+# ── Schedule triggers ───────────────────────────────────────────────────
+# @app.schedule("every 1h")
+# async def hourly():
+#     app.log.info("Hourly check")
+
+# @app.schedule("0 9 * * *")
+# async def morning():
+#     app.log.info("Good morning!")
+
+
+if __name__ == "__main__":
+    app.run()
+''',
 }
 
 
@@ -204,7 +297,7 @@ def cmd_wizard(ha_url: str, ha_token: str) -> int:
     choice = input("> ").strip()
     template_map = {
         "1": "motion", "2": "climate", "3": "alarm",
-        "4": "leak", "5": "report",
+        "4": "leak", "5": "report", "6": "custom",
     }
     if choice in template_map:
         tmpl = template_map[choice]
@@ -216,11 +309,6 @@ def cmd_wizard(ha_url: str, ha_token: str) -> int:
             print(f"\n✅ Created {path}")
             print(f"   Edit the entity IDs, then run: python {path}")
             return 0
-
-    if choice == "6":
-        print("\nCustom mode not yet implemented.")
-        print("Try: hassreactor init --template <name>")
-        return 1
 
     print("\nInvalid choice.")
     return 1
