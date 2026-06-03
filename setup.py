@@ -10,7 +10,7 @@ with open("README.md", encoding="utf-8") as f:
 
 setup(
     name="hassreactor",
-    version="0.2.0",
+    version="0.2.1",
     description="Event-driven Home Assistant automations in Python",
     long_description=long_description,
     long_description_content_type="text/markdown",
@@ -22,6 +22,11 @@ setup(
     install_requires=[
         "aiohttp>=3.8",
     ],
+    entry_points={
+        "console_scripts": [
+            "hassreactor = hassreactor.cli:main",
+        ],
+    },
     classifiers=[
         "Development Status :: 3 - Alpha",
         "Intended Audience :: Developers",
