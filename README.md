@@ -19,7 +19,7 @@ hassreactor lets you write these as plain Python files using WebSocket events �
 pip install hassreactor
 ```
 
-## Quick Start
+## Quick Start (for Python users)
 
 ```bash
 hassreactor init          # create automations.py
@@ -34,6 +34,60 @@ export HA_URL=http://homeassistant:8123
 export HA_TOKEN=your-long-lived-token
 hassreactor init
 python automations.py
+```
+
+## Wizard (no Python required)
+
+If you don't know Python, the wizard builds your automation step by step with a simple menu — no code to write:
+
+```bash
+hassreactor wizard
+```
+
+Pick a category:
+1. **Motion sensor → light** — motion detected, light on; no motion for 5 min, light off
+2. **Temperature → fan/climate** — above 28°C, fan on; below 25°C, fan off
+3. **Door/window → notification** — any door/window opens, Telegram alert
+4. **Water leak → valve + alert** — leak detected, close main valve + critical alert
+5. **Schedule → hourly report** — log temperature every hour
+
+You still need to edit the generated `automations.py` to replace the example entity IDs with yours (e.g. `binary_sensor.motion_sensor` → `binary_sensor.your_kitchen_motion`).
+
+Need to see what entities you have? Run:
+
+```bash
+hassreactor discover
+```
+
+This connects to Home Assistant and lists all your entities grouped by type, with suggestions on how to automate them.
+
+### Wizard + Docker
+
+The wizard runs **locally** — it's an interactive tool that asks questions in your terminal. It does **not** work inside Docker.
+
+The workflow is:
+
+```bash
+# 1. On your PC: run the wizard → generates automations.py
+hassreactor wizard
+
+# 2. Edit the entity IDs in automations.py
+
+# 3. Start Docker (mounts your automations.py as a volume)
+docker compose up -d
+```
+
+Once running, edit `automations.py` anytime, save — hassreactor hot-reloads inside the container without restarting.
+
+### Templates
+
+Skip the wizard and generate directly from a named template:
+
+```bash
+hassreactor init --template motion    # motion sensor → light
+hassreactor init --template climate   # temperature → fan/climate
+hassreactor init --template alarm     # door/window → notification
+hassreactor init --template leak      # water leak → valve + alert
 ```
 
 ## Trigger Types
