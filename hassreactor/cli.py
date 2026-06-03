@@ -245,7 +245,171 @@ if __name__ == "__main__":
 }
 
 
+# ── Template entity slots (placeholder → question) ──────────────────────────
+# Each template defines which entity slots to ask for.
+# Format: (placeholder_entity_id, question_label, domain_filter)
+
+_TEMPLATE_SLOTS: dict[str, list[tuple[str, str, str]]] = {
+    "motion": [
+        ("binary_sensor.motion_sensor", "Motion sensor", "binary_sensor"),
+        ("light.motion_light", "Light to turn on", "light"),
+    ],
+    "climate": [
+        ("sensor.temperature_sensor", "Temperature sensor", "sensor"),
+        ("fan.cooling_fan", "Fan or AC", "fan,climate"),
+        ("climate.thermostat", "Thermostat", "climate"),
+    ],
+    "alarm": None,  # special: uses comma-separated list
+    "leak": [
+        ("binary_sensor.leak_sensor", "Leak sensor", "binary_sensor"),
+        ("valve.main_water", "Main water valve", "valve"),
+    ],
+    "report": [
+        ("sensor.temperature_sensor", "Temperature sensor", "sensor"),
+        ("sensor.humidity_sensor", "Humidity sensor", "sensor"),
+    ],
+    "custom": None,  # no entity substitution
+}
+
+
 # ── Commands ────────────────────────────────────────────────────────────────
+
+
+async def _wizard_discover(url: str, token: str) -> dict[str, str]:
+    """Fetch all entities from HA. Returns {entity_id: friendly_name}."""
+    from hassreactor.engine import EventEngine
+
+    engine = EventEngine(url, token, verify_ssl=False)
+    try:
+        await engine.connect()
+        states = await engine.get_states()
+    finally:
+        await engine.disconnect()
+
+    result: dict[str, str] = {}
+    for s in states:
+        eid = s.get("entity_id", "")
+        name = s.get("attributes", {}).get("friendly_name", eid)
+        result[eid] = name
+    return result
+
+
+def _print_entity_summary(entities: dict[str, str]) -> None:
+    """Print entities grouped by domain."""
+    by_domain: dict[str, list[tuple[str, str]]] = {}
+    for eid, name in sorted(entities.items()):
+        domain = eid.split(".")[0] if "." in eid else "other"
+        by_domain.setdefault(domain, []).append((eid, name))
+
+    priority = ["binary_sensor", "sensor", "light",
+                "switch", "climate", "cover", "fan", "valve"]
+    for domain in priority:
+        items = by_domain.pop(domain, [])
+        if not items:
+            continue
+        print(f"   {domain} ({len(items)})")
+        for eid, name in items[:5]:
+            print(f"     {eid}: {name}")
+        if len(items) > 5:
+            print(f"     ... and {len(items) - 5} more")
+        print()
+    for domain, items in sorted(by_domain.items()):
+        print(f"   {domain} ({len(items)})")
+        for eid, name in items[:3]:
+            print(f"     {eid}: {name}")
+        if len(items) > 3:
+            print(f"     ... and {len(items) - 3} more")
+        print()
+
+
+def _filter_entities(
+    entities: dict[str, str], domains: str
+) -> dict[str, str]:
+    """Filter entities by domain(s), comma-separated."""
+    allowed = {d.strip() for d in domains.split(",")}
+    return {
+        eid: name
+        for eid, name in entities.items()
+        if eid.split(".")[0] in allowed
+    }
+
+
+def _ask_template_entities(
+    tmpl: str, content: str, entities: dict[str, str]
+) -> str:
+    """Ask user to pick entities for each slot in the template."""
+    if tmpl == "alarm":
+        return _ask_alarm_entities(content, entities)
+
+    slots = _TEMPLATE_SLOTS.get(tmpl)
+    if not slots:
+        return content
+
+    for placeholder, question, domain_filter in slots:
+        # Show matching entities
+        filtered = _filter_entities(entities, domain_filter)
+        print(f"   {question} ({domain_filter}):")
+        if filtered:
+            for i, (eid, name) in enumerate(sorted(filtered.items()), 1):
+                print(f"     [{i}] {eid}  ({name})")
+            print(f"     [{len(filtered) + 1}] Type manually")
+            choice = input("   Pick a number or type entity ID: ").strip()
+            if choice.isdigit() and 1 <= int(choice) <= len(filtered):
+                pick = sorted(filtered.items())[int(choice) - 1][0]
+            elif choice:
+                pick = choice
+            else:
+                continue
+        else:
+            print(f"     (no {domain_filter} entities found)")
+            pick = input(f"   Enter {question} entity ID: ").strip()
+            if not pick:
+                continue
+
+        content = content.replace(placeholder, pick)
+        print(f"     ✅ Using: {pick}\n")
+
+    return content
+
+
+def _ask_alarm_entities(
+    content: str, entities: dict[str, str]
+) -> str:
+    """Special handler for alarm template — comma-separated list."""
+    filtered = _filter_entities(entities, "binary_sensor")
+    print("   Door/window sensors to monitor (binary_sensor):")
+    picks: list[str] = []
+    if filtered:
+        for i, (eid, name) in enumerate(sorted(filtered.items()), 1):
+            print(f"     [{i}] {eid}  ({name})")
+        print()
+        print("   Type numbers (comma-separated, e.g. 1,3,5)")
+        print("   or type entity IDs directly")
+        raw = input("   > ").strip()
+        if raw:
+            # Check if all tokens are numbers
+            tokens = [t.strip() for t in raw.split(",")]
+            sorted_entities = sorted(filtered.items())
+            if all(t.isdigit() for t in tokens):
+                picks = [
+                    sorted_entities[int(t) - 1][0]
+                    for t in tokens
+                    if 1 <= int(t) <= len(sorted_entities)
+                ]
+            else:
+                picks = [t for t in tokens if "." in t]
+            if picks:
+                # Replace the DOORS list in the template
+                import re
+                old_list = re.search(
+                    r'DOORS = \[.*?\]', content, re.DOTALL
+                )
+                if old_list:
+                    items = ",\n    ".join(f'"{p}"' for p in picks)
+                    new_list = f"DOORS = [\n    {items},\n]"
+                    content = content.replace(old_list.group(0), new_list)
+    print(f"     ✅ Monitoring {len(picks)} sensors\n")
+    return content
 
 
 def cmd_init(path: str, force: bool, template: str = "") -> int:
@@ -279,39 +443,113 @@ def cmd_init(path: str, force: bool, template: str = "") -> int:
 
 
 def cmd_wizard(ha_url: str, ha_token: str) -> int:
-    """Interactive automation builder."""
+    """Interactive wizard: credentials → discover → pick entities → generate."""
     import asyncio
 
     print("\n🔮 hassreactor Wizard\n")
     print("Let's build your automation step by step.\n")
 
-    # Categories
-    print("What do you want to automate?")
+    # ── Phase 1: Get HA credentials ──────────────────────────────────────
+    url = ha_url or os.getenv("HA_URL", "")
+    token = ha_token or os.getenv("HA_TOKEN", "")
+
+    if not url:
+        url = input(
+            "Home Assistant URL [http://homeassistant:8123]: "
+        ).strip()
+        if not url:
+            url = "http://homeassistant:8123"
+
+    if not token:
+        print(
+            "\nCreate a token in HA:"
+            " Settings → People → Long-Lived Access Tokens"
+        )
+        token = input("Home Assistant token: ").strip()
+        if not token:
+            print("\n❌ Token is required to connect to Home Assistant.")
+            return 1
+
+    # Save to .env for future use
+    save = input("\nSave credentials to .env file? [Y/n]: ").strip().lower()
+    if save in ("", "y", "yes"):
+        with open(".env", "w", encoding="utf-8") as f:
+            f.write(f"HA_URL={url}\n")
+            f.write(f"HA_TOKEN={token}\n")
+        print("   ✅ Saved to .env")
+
+    # ── Phase 2: Discovery (optional) ────────────────────────────────────
+    do_disc = input(
+        "\nConnect to HA and discover your entities? [Y/n]: "
+    ).strip().lower()
+    entities: dict[str, str] = {}  # entity_id → friendly_name
+
+    if do_disc in ("", "y", "yes"):
+        print("\n   Connecting to Home Assistant...")
+        try:
+            entities = asyncio.run(_wizard_discover(url, token))
+            if entities:
+                print(f"\n   ✅ Discovered {len(entities)} entities:\n")
+                _print_entity_summary(entities)
+            else:
+                print("   ⚠️  No entities found.")
+        except Exception as e:
+            print(f"   ⚠️  Could not connect: {e}")
+            print("   Continuing with placeholder entity IDs...\n")
+
+    # ── Phase 3: Category selection ─────────────────────────────────────
+    print("\nWhat do you want to automate?")
     print("  [1] Motion sensor → light")
     print("  [2] Temperature → fan/climate")
     print("  [3] Door/window open → notification")
     print("  [4] Water leak → valve + alert")
     print("  [5] Schedule → hourly report")
-    print("  [6] Custom (I know what I want)")
+    print("  [6] Custom (pick your own triggers)")
 
     choice = input("> ").strip()
     template_map = {
         "1": "motion", "2": "climate", "3": "alarm",
         "4": "leak", "5": "report", "6": "custom",
     }
-    if choice in template_map:
-        tmpl = template_map[choice]
-        if tmpl in _TEMPLATES:
-            path = "automations.py"
-            os.makedirs(".", exist_ok=True)
-            with open(path, "w", encoding="utf-8") as f:
-                f.write(_TEMPLATES[tmpl])
-            print(f"\n✅ Created {path}")
-            print(f"   Edit the entity IDs, then run: python {path}")
+    if choice not in template_map:
+        print("\nInvalid choice.")
+        return 1
+
+    tmpl = template_map[choice]
+    content = _TEMPLATES[tmpl]
+
+    # Inject real credentials
+    content = content.replace(
+        'HA_URL = "http://homeassistant:8123"',
+        f'HA_URL = "{url}"',
+    )
+    content = content.replace(
+        'HA_TOKEN = "your-long-lived-token-here"',
+        f'HA_TOKEN = "{token}"',
+    )
+
+    # ── Phase 4: Entity selection ───────────────────────────────────────
+    if entities and tmpl != "custom":
+        print()
+        content = _ask_template_entities(tmpl, content, entities)
+
+    # ── Phase 5: Generate ────────────────────────────────────────────────
+    path = "automations.py"
+    if os.path.exists(path):
+        overwrite = input(
+            f"\n{path} already exists. Overwrite? [y/N]: "
+        ).strip().lower()
+        if overwrite not in ("y", "yes"):
+            print("Aborted.")
             return 0
 
-    print("\nInvalid choice.")
-    return 1
+    os.makedirs(".", exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(content)
+
+    print(f"\n✅ Created {path}")
+    print(f"   Run: python {path}")
+    return 0
 
 
 def cmd_discover() -> int:

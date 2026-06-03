@@ -38,22 +38,29 @@ python automations.py
 
 ## Wizard (no Python required)
 
-If you don't know Python, the wizard builds your automation step by step with a simple menu — no code to write:
+If you don't know Python, the wizard builds your automation step by step — it asks for credentials, discovers your entities, lets you pick them by number, and generates a ready-to-run `automations.py`:
 
 ```bash
 hassreactor wizard
 ```
 
-Pick a category:
-1. **Motion sensor → light** — motion detected, light on; no motion for 5 min, light off
-2. **Temperature → fan/climate** — above 28°C, fan on; below 25°C, fan off
-3. **Door/window → notification** — any door/window opens, Telegram alert
-4. **Water leak → valve + alert** — leak detected, close main valve + critical alert
-5. **Schedule → hourly report** — log temperature every hour
+The wizard walks you through:
 
-You still need to edit the generated `automations.py` to replace the example entity IDs with yours (e.g. `binary_sensor.motion_sensor` → `binary_sensor.your_kitchen_motion`).
+1. **Credentials** — asks for HA URL and token (saves to `.env` for future use)
+2. **Discovery** (optional) — connects to HA and shows your actual entities grouped by type
+3. **Category** — pick what you want to automate:
+   - [1] Motion sensor → light
+   - [2] Temperature → fan/climate
+   - [3] Door/window → notification
+   - [4] Water leak → valve + alert
+   - [5] Schedule → hourly report
+   - [6] Custom (all trigger types as comments)
+4. **Pick entities** — for each entity your automation needs, the wizard shows a numbered list of matching entities from your HA (e.g. *Pick a number or type entity ID*)
+5. **Generate** — writes `automations.py` with your real entity IDs and credentials, ready to run
 
-Need to see what entities you have? Run:
+No more editing placeholder entity IDs by hand.
+
+Need to see what entities you have without using the wizard? Run:
 
 ```bash
 hassreactor discover
@@ -68,12 +75,10 @@ The wizard runs **locally** — it's an interactive tool that asks questions in 
 The workflow is:
 
 ```bash
-# 1. On your PC: run the wizard → generates automations.py
+# 1. On your PC: run the wizard (credentials + entity discovery + generate)
 hassreactor wizard
 
-# 2. Edit the entity IDs in automations.py
-
-# 3. Start Docker (mounts your automations.py as a volume)
+# 2. Start Docker (mounts your automations.py as a volume)
 docker compose up -d
 ```
 
