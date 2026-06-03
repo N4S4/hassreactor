@@ -85,4 +85,4 @@ Only dependency: `aiohttp`.
 
 ## License
 
-MIT — same as the original reacthass project.
+MIT
