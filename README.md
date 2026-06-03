@@ -22,19 +22,26 @@ pip install hassreactor
 ## Quick Start (for Python users)
 
 ```bash
-hassreactor init          # create automations.py
-# edit HA_URL, HA_TOKEN, then:
-python automations.py
+pip install hassreactor
+hassreactor init               # generates automations.py
 ```
 
-Or set env vars and skip config entirely:
+Open `automations.py` and replace the two placeholders at the top:
+
+```python
+HA_URL = "http://your-ha-ip:8123"
+HA_TOKEN = "your-long-lived-token-here"   # Settings → People → Long-Lived Access Tokens
+```
+
+Then run it:
 
 ```bash
-export HA_URL=http://homeassistant:8123
-export HA_TOKEN=your-long-lived-token
-hassreactor init
 python automations.py
 ```
+
+You should see `Connected to Home Assistant` — your automations are now live.
+
+> **No Python?** Skip this and use [`hassreactor wizard`](#wizard-no-python-required) instead — it asks for credentials interactively and lets you pick entities from a menu.
 
 ## Wizard (no Python required)
 
