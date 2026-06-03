@@ -334,10 +334,16 @@ def _filter_entities(
     }
 
 
+def _is_valid_entity_id(value: str) -> bool:
+    """Check if a string looks like a valid Home Assistant entity ID."""
+    return "." in value and not value.startswith(".") and not value.endswith(".")
+
+
 def _ask_template_entities(
     tmpl: str, content: str, entities: dict[str, str]
 ) -> str:
-    """Ask user to pick entities for each slot in the template."""
+    """Ask user to pick entities for each slot in the template.
+    Supports: number-pick, exact entity ID, or search-by-name."""
     if tmpl == "alarm":
         return _ask_alarm_entities(content, entities)
 
@@ -346,30 +352,85 @@ def _ask_template_entities(
         return content
 
     for placeholder, question, domain_filter in slots:
-        # Show matching entities
         filtered = _filter_entities(entities, domain_filter)
-        print(f"   {question} ({domain_filter}):")
-        if filtered:
-            for i, (eid, name) in enumerate(sorted(filtered.items()), 1):
-                print(f"     [{i}] {eid}  ({name})")
-            print(f"     [{len(filtered) + 1}] Type manually")
-            choice = input("   Pick a number or type entity ID: ").strip()
-            if choice.isdigit() and 1 <= int(choice) <= len(filtered):
-                pick = sorted(filtered.items())[int(choice) - 1][0]
-            elif choice:
-                pick = choice
-            else:
-                continue
-        else:
-            print(f"     (no {domain_filter} entities found)")
-            pick = input(f"   Enter {question} entity ID: ").strip()
-            if not pick:
-                continue
-
-        content = content.replace(placeholder, pick)
-        print(f"     ✅ Using: {pick}\n")
+        pick = _pick_one_entity(question, domain_filter, filtered)
+        if pick:
+            content = content.replace(placeholder, pick)
+            print(f"     ✅ Using: {pick}\n")
 
     return content
+
+
+def _pick_one_entity(
+    question: str, domain_filter: str, filtered: dict[str, str],
+) -> str:
+    """Interactive entity picker: number, exact ID, or search by name."""
+    print(f"   {question} ({domain_filter}):")
+    if not filtered:
+        print(f"     (no {domain_filter} entities found)")
+        while True:
+            pick = input(f"   Enter {question} entity ID: ").strip()
+            if not pick:
+                return ""
+            if _is_valid_entity_id(pick):
+                return pick
+            print(f"     ⚠️  '{pick}' is not a valid entity ID"
+                  " (must be like sensor.name)")
+
+    # Show filtered entities (up to 8, to not flood the screen)
+    sorted_entities = sorted(filtered.items())
+    _print_entity_menu(sorted_entities)
+
+    while True:
+        choice = input("   Pick a number, entity ID, or search: ").strip()
+        if not choice:
+            return ""
+
+        # Number pick
+        if choice.isdigit() and 1 <= int(choice) <= len(sorted_entities):
+            return sorted_entities[int(choice) - 1][0]
+
+        # Exact entity ID
+        if _is_valid_entity_id(choice):
+            return choice
+
+        # Search by name substring
+        matches = [
+            (eid, name) for eid, name in sorted_entities
+            if choice.lower() in name.lower()
+        ]
+        if matches:
+            print(f"     🔍 Found {len(matches)} matching '{choice}':")
+            for i, (eid, name) in enumerate(matches, 1):
+                print(f"       [{i}] {eid}  ({name})")
+            sub = input("     Pick a number or enter another search: ").strip()
+            if sub.isdigit() and 1 <= int(sub) <= len(matches):
+                return matches[int(sub) - 1][0]
+            if _is_valid_entity_id(sub):
+                return sub
+            # Recurse: treat sub as new search term
+            if sub and "." not in sub:
+                choice = sub
+                # Re-filter on the new term
+                matches = [
+                    (eid, name) for eid, name in matches
+                    if choice.lower() in name.lower()
+                ]
+                if matches:
+                    for i, (eid, name) in enumerate(matches, 1):
+                        print(f"       [{i}] {eid}  ({name})")
+                    sub2 = input("     Pick a number: ").strip()
+                    if sub2.isdigit() and 1 <= int(sub2) <= len(matches):
+                        return matches[int(sub2) - 1][0]
+            continue
+
+        print(f"     ⚠️  No match for '{choice}'. Try again.")
+
+
+def _print_entity_menu(sorted_entities: list[tuple[str, str]]) -> None:
+    """Print numbered entity list."""
+    for i, (eid, name) in enumerate(sorted_entities, 1):
+        print(f"     [{i}] {eid}  ({name})")
 
 
 def _ask_alarm_entities(

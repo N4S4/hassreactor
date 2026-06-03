@@ -62,7 +62,7 @@ The wizard walks you through:
    - [4] Water leak → valve + alert
    - [5] Schedule → hourly report
    - [6] Custom (all trigger types as comments)
-4. **Pick entities** — for each entity your automation needs, the wizard shows a numbered list of matching entities from your HA (e.g. *Pick a number or type entity ID*)
+4. **Pick entities** — for each entity your automation needs, the wizard shows a numbered list from your HA. You can pick a number, type an exact entity ID (like `sensor.temperature`), or **search by name** — type "cucina" and it filters matching entities.
 5. **Generate** — writes `automations.py` with your real entity IDs and credentials, ready to run
 
 No more editing placeholder entity IDs by hand.
@@ -110,6 +110,8 @@ hassreactor init --template motion    # motion sensor → light
 hassreactor init --template climate   # temperature → fan/climate
 hassreactor init --template alarm     # door/window → notification
 hassreactor init --template leak      # water leak → valve + alert
+hassreactor init --template report    # hourly sensor report
+hassreactor init --template custom    # all trigger types as comments
 ```
 
 ## Trigger Types
@@ -198,9 +200,11 @@ Service calls use the REST API. Only dependency: `aiohttp`.
 
 ## Docker
 
+The wizard generates a `.env` file with your credentials automatically. Just run:
+
 ```bash
-cp .env.example .env                    # set your HA_TOKEN
-docker compose up -d                    # build and start
+hassreactor wizard          # generates automations.py + .env
+docker compose up -d        # build and start
 ```
 
 Your `automations.py` lives **on your PC** and is mounted as a volume — not inside the image:

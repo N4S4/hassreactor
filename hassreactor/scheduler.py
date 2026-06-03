@@ -94,33 +94,63 @@ def _cron_field_matches(expr: str, value: str) -> bool:
 
 
 class Scheduler:
-    """Manages scheduled tasks."""
+    """Manages scheduled tasks.
+
+    Jobs are registered eagerly (at decoration time) but only
+    started when ``start()`` is called — which must happen inside
+    a running event loop (from ``Reactor._run``).
+    """
 
     def __init__(self):
         self._tasks: list[asyncio.Task] = []
+        self._pending: list[tuple[str, Callable[[], Awaitable[None]]]] = []
+        self._pending_sun: list[dict] = []
 
     def add(
         self,
         expression: str,
         callback: Callable[[], Awaitable[None]],
     ) -> None:
-        """Schedule a recurring task.
+        """Schedule a recurring task (deferred until start())."""
+        self._pending.append((expression, callback))
 
-        Args:
-            expression: "every 30m" or "0 9 * * *"
-            callback: async function to call
+    def start(self) -> None:
+        """Create background tasks for all pending jobs.
+
+        Must be called from inside a running event loop.
         """
-        interval = _parse_interval(expression)
-        is_cron = _RE_CRON.match(expression.strip())
+        loop = asyncio.get_running_loop()
 
-        if interval > 0:
-            task = asyncio.create_task(_run_interval(callback, interval))
-        elif is_cron:
-            task = asyncio.create_task(_run_cron(callback, expression.strip()))
-        else:
-            raise ValueError(f"Cannot parse schedule: {expression!r}")
+        for expression, callback in self._pending:
+            interval = _parse_interval(expression)
+            is_cron = _RE_CRON.match(expression.strip())
 
-        self._tasks.append(task)
+            if interval > 0:
+                task = loop.create_task(_run_interval(callback, interval))
+            elif is_cron:
+                task = loop.create_task(
+                    _run_cron(callback, expression.strip())
+                )
+            else:
+                raise ValueError(
+                    f"Cannot parse schedule: {expression!r}"
+                )
+            self._tasks.append(task)
+
+        # Process sun-based jobs deferred from add_sun()
+        for s in self._pending_sun:
+            from .sun import SunCalc
+            sun = SunCalc(s["engine"])
+
+            async def _runner(cb=s["callback"], ev=s["event"],
+                             dr=s["direction"], off=s["offset_s"]):
+                t = await sun.schedule(cb, ev, dr, off)
+                self._tasks.append(t)
+
+            self._tasks.append(loop.create_task(_runner()))
+
+        self._pending.clear()
+        self._pending_sun.clear()
 
     def cancel_all(self) -> None:
         for task in self._tasks:
@@ -132,15 +162,14 @@ class Scheduler:
         callback: Callable[[], Awaitable[None]],
         engine,
     ) -> None:
-        """Schedule a sun-based trigger. Called internally by @app.sun()."""
-        from .sun import SunCalc
-        sun = SunCalc(engine)
-
-        async def _runner():
-            task = await sun.schedule(callback, event, direction, offset_s)
-            self._tasks.append(task)
-
-        self._tasks.append(asyncio.create_task(_runner()))
+        """Schedule a sun-based trigger (deferred until start())."""
+        self._pending_sun.append({
+            "event": event,
+            "direction": direction,
+            "offset_s": offset_s,
+            "callback": callback,
+            "engine": engine,
+        })
 
 
 async def _run_interval(

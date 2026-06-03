@@ -392,6 +392,9 @@ class Reactor:
     async def _run(self) -> None:
         await self._connect()
 
+        # Start scheduler — now safe because the event loop is running
+        self._scheduler.start()
+
         # Start hot-reload watcher
         if self._hot_reload_path:
             self._hot_reload_mtime = os.path.getmtime(self._hot_reload_path)
@@ -432,6 +435,9 @@ class Reactor:
         for task in self._pending_delays.values():
             task.cancel()
         self._pending_delays.clear()
+
+        # Cancel old scheduler tasks
+        self._scheduler.cancel_all()
 
         # Clear engine listeners
         self._engine._listeners.clear()
@@ -477,6 +483,9 @@ class Reactor:
             "Hot-reload complete — %d triggers, %d templates",
             len(self._triggers), len(self._template_triggers),
         )
+
+        # Restart scheduler with new tasks
+        self._scheduler.start()
 
     async def _on_reconnect(self) -> None:
         """Re-register listeners after auto-reconnect."""
