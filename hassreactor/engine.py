@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from typing import Any, Callable, Awaitable
 
 import aiohttp
@@ -48,6 +49,9 @@ class EventEngine:
         self._connected = False
         self._reconnect_delay = _RECONNECT_MIN
         self._on_reconnect: list[Callable[[], Awaitable[None]]] = []
+        # Trend history: entity_id → list of (timestamp, value)
+        self._trend_history: dict[str, list[tuple[float, float]]] = {}
+        self._trend_maxlen = 300  # keep last N samples per entity
 
     # -- public API -----------------------------------------------------------
 
@@ -132,6 +136,41 @@ class EventEngine:
     def on_reconnect(self, callback: Callable[[], Awaitable[None]]) -> None:
         """Register a callback to run after every successful reconnection."""
         self._on_reconnect.append(callback)
+
+    def record_state(self, entity_id: str, state_val: str) -> None:
+        """Record a state sample for trend tracking."""
+        try:
+            val = float(state_val)
+        except (TypeError, ValueError):
+            return
+        now = time.monotonic()
+        if entity_id not in self._trend_history:
+            self._trend_history[entity_id] = []
+        hist = self._trend_history[entity_id]
+        hist.append((now, val))
+        if len(hist) > self._trend_maxlen:
+            hist.pop(0)
+
+    def get_trend_change(
+        self, entity_id: str, window_s: float
+    ) -> float | None:
+        """Return value change over the last `window_s` seconds, or None."""
+        hist = self._trend_history.get(entity_id)
+        if not hist or len(hist) < 2:
+            return None
+        now = time.monotonic()
+        cutoff = now - window_s
+        first = None
+        latest = hist[-1][1]
+        for ts, val in hist:
+            if ts >= cutoff:
+                if first is None:
+                    first = val
+                break
+            first = val
+        if first is None:
+            first = hist[0][1]
+        return latest - first
 
     # -- internal -------------------------------------------------------------
 

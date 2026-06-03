@@ -10,7 +10,7 @@ with open("README.md", encoding="utf-8") as f:
 
 setup(
     name="hassreactor",
-    version="0.2.1",
+    version="0.3.0",
     description="Event-driven Home Assistant automations in Python",
     long_description=long_description,
     long_description_content_type="text/markdown",

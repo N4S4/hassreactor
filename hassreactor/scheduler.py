@@ -127,6 +127,21 @@ class Scheduler:
             task.cancel()
         self._tasks.clear()
 
+    def add_sun(
+        self, event: str, direction: str, offset_s: float,
+        callback: Callable[[], Awaitable[None]],
+        engine,
+    ) -> None:
+        """Schedule a sun-based trigger. Called internally by @app.sun()."""
+        from .sun import SunCalc
+        sun = SunCalc(engine)
+
+        async def _runner():
+            task = await sun.schedule(callback, event, direction, offset_s)
+            self._tasks.append(task)
+
+        self._tasks.append(asyncio.create_task(_runner()))
+
 
 async def _run_interval(
     callback: Callable[[], Awaitable[None]], interval: float,
